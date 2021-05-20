@@ -1,6 +1,7 @@
 Package["NES`"]
 
 PackageExport["M6502"]
+PackageExport["M6502Create"]
 
 (* libNES *)
 

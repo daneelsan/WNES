@@ -47,7 +47,7 @@ PackNES[opts : OptionsPattern[]] := Module[{
     kernelDir, libraryDir, fileInputs, pacletCreatorFunction, pacletFileName
   },
 
-  {sourceDir, libDir, repositoryDir, masterBranch, outputDir, verbose} =
+  {repositoryDir, sourceDir, libDir, masterBranch, outputDir, verbose} =
     OptionValue[
       PackNES,
       {opts},
