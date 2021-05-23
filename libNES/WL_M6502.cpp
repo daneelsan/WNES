@@ -1,19 +1,12 @@
-#include "M6502.hpp"
+#include "WL_M6502.hpp"
+#include "WL_utilities.hpp"
 
 #include <stdint.h>
 
 #include <unordered_map>
+
 #define CHIPS_IMPL
 #include "chips/m6502.h"
-
-#define WS_KEYVALUE_INTEGER(mlp, key, value) \
-  do {                                       \
-    WSPutFunction(mlp, "Rule", 2);           \
-    WSPutString(mlp, (const char*)key);      \
-    WSPutInteger(mlp, value);                \
-  } while (0)
-
-#define UNITIZE(val) ((val) > 0)
 
 std::unordered_map<mint, m6502_t*> m6502Map;
 
@@ -29,6 +22,88 @@ DLLEXPORT void M6502_manageInstance(WolframLibraryData libData, mbool mode, mint
     if (cpu != NULL) free(cpu);
     m6502Map.erase(id);
   }
+}
+
+EXTERN_C DLLEXPORT int M6502_getInstructionRegister(WolframLibraryData libData,
+                                                    mint Argc,
+                                                    MArgument* Args,
+                                                    MArgument Res) {
+  int err = LIBRARY_FUNCTION_ERROR;
+
+  if (Argc != 1) return err;
+  mint id = MArgument_getInteger(Args[0]);
+
+  m6502_t* cpu = m6502Map[id];
+  if (cpu == NULL) return err;
+
+  MTensor opcodeAndCycle;
+  mint dims[1] = {2};
+  err = libData->MTensor_new(MType_Integer, 1, dims, &opcodeAndCycle);
+  mint* buffer = libData->MTensor_getIntegerData(opcodeAndCycle);
+
+  uint16_t ir = cpu->IR;
+  buffer[0] = ir >> 3;
+  buffer[1] = ir & 0b111;
+
+  MArgument_setMTensor(Res, opcodeAndCycle);
+
+  return err;
+}
+
+EXTERN_C DLLEXPORT int M6502_getRegisters(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
+  int err = LIBRARY_FUNCTION_ERROR;
+
+  if (Argc != 1) return err;
+  mint id = MArgument_getInteger(Args[0]);
+
+  m6502_t* cpu = m6502Map[id];
+  if (cpu == NULL) return err;
+
+  MTensor registerList;
+  mint dims[1] = {6};
+  err = libData->MTensor_new(MType_Integer, 1, dims, &registerList);
+  mint* buffer = libData->MTensor_getIntegerData(registerList);
+
+  buffer[0] = m6502_pc(cpu);
+  buffer[1] = m6502_a(cpu);
+  buffer[2] = m6502_x(cpu);
+  buffer[3] = m6502_y(cpu);
+  buffer[4] = m6502_s(cpu);
+  buffer[5] = m6502_p(cpu);
+
+  MArgument_setMTensor(Res, registerList);
+
+  return err;
+}
+
+inline bool isByte(int n) { return 0 <= n <= 0xFF; }
+
+// TODO: We might want to probably set/unset the pins, too
+// TODO: Split setCPUState into setCPURegisters, setCPUPins, etc
+EXTERN_C DLLEXPORT int M6502_setRegisters(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
+  if (Argc != 7) return LIBRARY_FUNCTION_ERROR;
+
+  mint id = MArgument_getInteger(Args[0]);
+  mint pc = MArgument_getInteger(Args[1]);
+  mint a = MArgument_getInteger(Args[2]);
+  mint x = MArgument_getInteger(Args[3]);
+  mint y = MArgument_getInteger(Args[4]);
+  mint s = MArgument_getInteger(Args[5]);
+  mint p = MArgument_getInteger(Args[6]);
+
+  m6502_t* cpu = m6502Map[id];
+  if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
+
+  if (0 <= pc && pc <= 0xFFFF) m6502_set_pc(cpu, pc);
+  if (isByte(a)) m6502_set_a(cpu, a);
+  if (isByte(x)) m6502_set_x(cpu, x);
+  if (isByte(y)) m6502_set_y(cpu, y);
+  if (isByte(s)) m6502_set_s(cpu, s);
+  if (isByte(p)) m6502_set_p(cpu, p);
+
+  MArgument_setBoolean(Res, true);
+
+  return LIBRARY_NO_ERROR;
 }
 
 EXTERN_C DLLEXPORT int M6502_getState(WolframLibraryData libData, WSLINK mlp) {
@@ -86,49 +161,7 @@ EXTERN_C DLLEXPORT int M6502_getState(WolframLibraryData libData, WSLINK mlp) {
   return LIBRARY_NO_ERROR;
 }
 
-// TODO: We might want to probably set/unset the pins, too
-// TODO: Split setCPUState into setCPURegisters, setCPUPins, etc
-EXTERN_C DLLEXPORT int M6502_setState(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
-  int error = LIBRARY_FUNCTION_ERROR;
-  mbool success = true;
-
-  if (Argc != 7) return error;
-
-  mint id = MArgument_getInteger(Args[0]);
-  // PC, A, X, Y, S, P
-  mint pc = MArgument_getInteger(Args[1]);
-  mint a = MArgument_getInteger(Args[2]);
-  mint x = MArgument_getInteger(Args[3]);
-  mint y = MArgument_getInteger(Args[4]);
-  mint s = MArgument_getInteger(Args[5]);
-  mint p = MArgument_getInteger(Args[6]);
-
-  m6502_t* cpu = m6502Map[id];
-  if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
-
-  if (pc < 0) success = false;
-  if (a < 0) success = false;
-  if (x < 0) success = false;
-  if (y < 0) success = false;
-  if (s < 0) success = false;
-  if (p < 0) success = false;
-
-  m6502_set_pc(cpu, pc);
-  m6502_set_a(cpu, a);
-  m6502_set_x(cpu, x);
-  m6502_set_y(cpu, y);
-  m6502_set_s(cpu, s);
-  m6502_set_p(cpu, p);
-
-  MArgument_setBoolean(Res, success);
-
-  if (success) {
-    error = LIBRARY_NO_ERROR;
-  }
-  return error;
-}
-
-EXTERN_C DLLEXPORT int M6502_set_s(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int M6502_setStackPointer(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
   if (Argc != 2) return LIBRARY_FUNCTION_ERROR;
 
   mint id = MArgument_getInteger(Args[0]);
@@ -136,7 +169,8 @@ EXTERN_C DLLEXPORT int M6502_set_s(WolframLibraryData libData, mint Argc, MArgum
 
   m6502_t* cpu = m6502Map[id];
   if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
-  if (s < 0) return LIBRARY_FUNCTION_ERROR;
+
+  if(!isByte(s)) return LIBRARY_FUNCTION_ERROR;
 
   m6502_set_s(cpu, s);
   MArgument_setInteger(Res, m6502_s(cpu));
@@ -144,7 +178,7 @@ EXTERN_C DLLEXPORT int M6502_set_s(WolframLibraryData libData, mint Argc, MArgum
   return LIBRARY_NO_ERROR;
 }
 
-EXTERN_C DLLEXPORT int M6502_set_p(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int M6502_setProcessorStatus(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
   if (Argc != 2) return LIBRARY_FUNCTION_ERROR;
 
   mint id = MArgument_getInteger(Args[0]);
@@ -152,7 +186,8 @@ EXTERN_C DLLEXPORT int M6502_set_p(WolframLibraryData libData, mint Argc, MArgum
 
   m6502_t* cpu = m6502Map[id];
   if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
-  if (p < 0) return LIBRARY_FUNCTION_ERROR;
+
+  if(!isByte(p)) return LIBRARY_FUNCTION_ERROR;
 
   m6502_set_p(cpu, p);
   MArgument_setInteger(Res, m6502_p(cpu));
@@ -160,7 +195,7 @@ EXTERN_C DLLEXPORT int M6502_set_p(WolframLibraryData libData, mint Argc, MArgum
   return LIBRARY_NO_ERROR;
 }
 
-EXTERN_C DLLEXPORT int M6502_set_pc(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int M6502_setProgramCounter(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res) {
   if (Argc != 2) return LIBRARY_FUNCTION_ERROR;
 
   mint id = MArgument_getInteger(Args[0]);
@@ -168,7 +203,8 @@ EXTERN_C DLLEXPORT int M6502_set_pc(WolframLibraryData libData, mint Argc, MArgu
 
   m6502_t* cpu = m6502Map[id];
   if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
-  if (pc < 0) return LIBRARY_FUNCTION_ERROR;
+
+  if((pc < 0) || (pc > 0xFFFF)) return LIBRARY_FUNCTION_ERROR;
 
   m6502_set_pc(cpu, pc);
   MArgument_setInteger(Res, m6502_pc(cpu));
@@ -180,11 +216,13 @@ EXTERN_C DLLEXPORT int M6502_tick(WolframLibraryData libData, mint Argc, MArgume
   if (Argc != 2) return LIBRARY_FUNCTION_ERROR;
 
   mint id = MArgument_getInteger(Args[0]);
+  // TODO: mint is int64_t, while tick expects a uint64_t
   mint pins = MArgument_getInteger(Args[1]);
 
   m6502_t* cpu = m6502Map[id];
-  if (cpu == NULL) return LIBRARY_FUNCTION_ERROR;
-  if (pins < 0) return LIBRARY_FUNCTION_ERROR;
+  if (cpu == NULL || pins < 0) {
+    return LIBRARY_FUNCTION_ERROR;
+  }
 
   pins = m6502_tick(cpu, pins);
   MArgument_setInteger(Res, pins);

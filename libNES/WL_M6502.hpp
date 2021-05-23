@@ -14,18 +14,6 @@ EXTERN_C DLLEXPORT int M6502_getState(WolframLibraryData libData, WSLINK mlp);
  */
 EXTERN_C DLLEXPORT int M6502_setState(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res);
 
-/** @brief Sets the stack pointer register S.
- */
-EXTERN_C DLLEXPORT int M6502_set_s(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res);
-
-/** @brief Sets the processor status register P.
- */
-EXTERN_C DLLEXPORT int M6502_set_p(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res);
-
-/** @brief Sets the program counter PC.
- */
-EXTERN_C DLLEXPORT int M6502_set_pc(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res);
-
 /** @brief Executes one tick of an M6502 instance.
  */
 EXTERN_C DLLEXPORT int M6502_tick(WolframLibraryData libData, mint Argc, MArgument* Args, MArgument Res);
